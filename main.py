@@ -1,7 +1,8 @@
+import logging
 from telegram import Update
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
+from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
 
-# Savollar va javoblar (A1 dan C2 gacha)
+# Savollar va javoblar
 questions = [
     ("What is the capital of England? \n(a) London \n(b) Paris \n(c) Rome", "a"),      # A1
     ("Choose the correct sentence: \n(a) He go to school. \n(b) He goes to school. \n(c) He going to school.", "b"),  # A2
@@ -12,45 +13,52 @@ questions = [
 ]
 
 level_names = ["A1", "A2", "B1", "B2", "C1", "C2"]
-
-# Foydalanuvchilar holatini saqlaymiz: user_id -> {'score': int, 'current': int}
 user_scores = {}
 
-def start(update: Update, context: CallbackContext):
-    update.message.reply_text(
-        "Salom! Ingliz tilidagi darajangizni baholash uchun test. \n"
-        "6 ta savolga javob bering.\n"
-        "Boshlash uchun /test ni bosing."
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
+)
+
+# /start
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "Salom! Ingliz tili darajangizni bilish uchun 6 ta savolga javob bering.\n"
+        "Boshlash uchun /test buyrug‘ini yozing."
     )
 
-def test(update: Update, context: CallbackContext):
-    user_id = update.message.from_user.id
+# /test
+async def test(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
     user_scores[user_id] = {'score': 0, 'current': 0}
-    update.message.reply_text("Test boshlandi! Birinchi savol:")
-    ask_question(update, context, user_id)
+    await update.message.reply_text("Test boshlandi! Birinchi savol:")
+    await ask_question(update, user_id)
 
-def ask_question(update: Update, context: CallbackContext, user_id):
+# Savol berish
+async def ask_question(update: Update, user_id: int):
     current = user_scores[user_id]['current']
     if current < len(questions):
-        update.message.reply_text(questions[current][0])
+        await update.message.reply_text(questions[current][0])
     else:
         score = user_scores[user_id]['score']
         if score > 0:
             level = level_names[score - 1]
         else:
             level = "No level"
-        update.message.reply_text(f"✅ Test yakunlandi!\nSizning darajangiz: {level} ({score} ta to'g'ri javob)")
+        await update.message.reply_text(
+            f"✅ Test tugadi!\nSizning darajangiz: {level} ({score} ta to‘g‘ri javob)"
+        )
         user_scores.pop(user_id)
 
-def handle_answer(update: Update, context: CallbackContext):
-    user_id = update.message.from_user.id
+# Javobni qayta ishlash
+async def handle_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
     if user_id not in user_scores:
-        update.message.reply_text("❗ Test boshlash uchun /test buyrug'ini yozing.")
+        await update.message.reply_text("Testni boshlash uchun /test buyrug‘ini yozing.")
         return
 
     current = user_scores[user_id]['current']
     if current >= len(questions):
-        update.message.reply_text("ℹ️ Test allaqachon tugadi. /test ni qayta yozing.")
+        await update.message.reply_text("Test tugadi. /test deb qayta yozing.")
         return
 
     user_answer = update.message.text.lower().strip()
@@ -58,25 +66,24 @@ def handle_answer(update: Update, context: CallbackContext):
 
     if user_answer == correct_answer:
         user_scores[user_id]['score'] += 1
-        update.message.reply_text("✅ To'g'ri!")
+        await update.message.reply_text("✅ To‘g‘ri!")
     else:
-        update.message.reply_text(f"❌ Noto'g'ri! To'g'ri javob: {correct_answer}")
+        await update.message.reply_text(f"❌ Noto‘g‘ri! To‘g‘ri javob: {correct_answer}")
 
     user_scores[user_id]['current'] += 1
-    ask_question(update, context, user_id)
+    await ask_question(update, user_id)
 
+# Main
 def main():
-    TOKEN = "SIZNING_BOT_TOKENINGIZNI_BU_YERGA_QO'YING"  # 👉 bu yerga BotFather dan olingan tokenni yozing
-    updater = Updater(TOKEN, use_context=True)
+    TOKEN = "SIZNING_BOT_TOKENINGIZNI_QO‘YING"  # <-- Bu yerga tokeningizni yozing
+    app = Application.builder().token(TOKEN).build()
 
-    dp = updater.dispatcher
-    dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(CommandHandler("test", test))
-    dp.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_answer))
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("test", test))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_answer))
 
     print("🤖 Bot ishga tushdi...")
-    updater.start_polling()
-    updater.idle()
+    app.run_polling()
 
-if __name__ == "__main__":   # ❌ sizda `if name == "main":` edi
+if __name__ == "__main__":
     main()
